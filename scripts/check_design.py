@@ -94,6 +94,17 @@ PROTECTED = {
     "rn": ("unistyles.ts",),
 }
 
+# ...unless the thing that generates them changed in the same diff. A generated
+# file moving alongside its generator or its input payload is a regeneration,
+# which is the sanctioned way to change one. Only a generated file moving on its
+# own is a hand-edit.
+GENERATORS = {
+    "swift": ("scripts/generate_", "scripts/make_all.py", "scripts/make_strings.py",
+              "scripts/design-tokens.json", "scripts/token_fetch.py",
+              "scripts/update_tokens.py", "Localizable.xcstrings"),
+    "rn": ("scripts/sync-tokens.js",),
+}
+
 
 @dataclass
 class Violation:
@@ -360,12 +371,16 @@ def changed_files(base: str) -> list[str]:
 
 def protected_touched(platform: str, base: str) -> list[Violation]:
     changed = changed_files(base)
+    regenerated = any(any(g in f for g in GENERATORS[platform]) for f in changed)
+    if regenerated:
+        return []
     out = []
     for f in changed:
         if any(f.endswith(s) or s in f for s in PROTECTED[platform]):
             out.append(Violation(
                 f"{platform}/generated-file-edited", f, 0, f,
-                "This file is generated. Change the source in "
+                "This file is generated and changed on its own -- no generator "
+                "or token payload moved with it. Change the source in "
                 "Orion-Sleep/design and regenerate."))
     return out
 
