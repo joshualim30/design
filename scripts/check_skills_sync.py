@@ -61,16 +61,21 @@ def main() -> int:
         elif sha256(rel) != want:
             modified.append(rel)
 
-    # Anything under .claude/skills/ that the manifest does not know about.
+    # Files added inside a skill we vendored -- those are drift. Skills this
+    # manifest never owned (app-specific or third-party) are left alone: this
+    # repo is allowed to have its own.
     skills_root = os.path.join(".claude", "skills")
+    owned_dirs = {rel.split("/")[2] for rel in expected
+                  if rel.startswith(".claude/skills/") and rel.count("/") > 2}
     extra = []
     for dirpath, dirnames, filenames in os.walk(skills_root):
         dirnames[:] = [d for d in dirnames if d != "__pycache__"]
         for fn in filenames:
             rel = os.path.join(dirpath, fn).replace(os.sep, "/")
-            if rel.endswith("/.vendored.json"):
+            if rel.endswith("/.vendored.json") or rel in expected:
                 continue
-            if rel not in expected:
+            parts = rel.split("/")
+            if len(parts) > 3 and parts[2] in owned_dirs:
                 extra.append(rel)
 
     if not (modified or missing or extra):
@@ -81,7 +86,7 @@ def main() -> int:
     print("::error::Vendored skills do not match .vendored.json.\n")
     for label, rows in (("modified locally", modified),
                         ("missing", missing),
-                        ("not in the manifest", extra)):
+                        ("added inside a vendored skill", extra)):
         if rows:
             print(f"  {label}:")
             for r in sorted(rows):

@@ -99,23 +99,32 @@ PROTECTED = {
     "rn": ("unistyles.ts",),
 }
 
-# ...unless the thing that generates that file changed in the same diff. A
-# generated file moving alongside its own generator or input payload is a
-# regeneration, which is the sanctioned way to change one; moving on its own is
-# a hand-edit.
+# Inputs shared by every token generator -- a payload change legitimately moves
+# all of them at once.
+TOKEN_INPUTS = ("scripts/make_all.py", "scripts/design-tokens.json",
+                "scripts/token_fetch.py", "scripts/update_tokens.py")
+
+# A generated file moving alongside the generator that writes it, or that
+# generator's input, is a regeneration -- the sanctioned way to change one.
+# Moving on its own is a hand-edit.
 #
-# Paired per protected file rather than diff-wide: changing generate_colors.py
-# should not license an unrelated hand-edit to Strings.generated.swift.
+# Paired per output, most specific first: changing generate_colors.py should
+# not license a hand-edit to Spacing.generated.swift.
 GENERATORS = {
     "swift": (
+        ("Icon.generated.swift", ("scripts/generate_icons.py", "Assets.xcassets")),
         ("Strings.generated.swift", ("scripts/make_strings.py",
                                      "scripts/generate_strings.py",
                                      "scripts/format_strings.py",
                                      "Localizable.xcstrings")),
-        (".generated.swift", ("scripts/generate_", "scripts/make_all.py",
-                              "scripts/design-tokens.json",
-                              "scripts/token_fetch.py",
-                              "scripts/update_tokens.py")),
+        ("Color.generated.swift", ("scripts/generate_colors.py",) + TOKEN_INPUTS),
+        ("Spacing.generated.swift", ("scripts/generate_spacing.py",) + TOKEN_INPUTS),
+        ("Radius.generated.swift", ("scripts/generate_radius.py",) + TOKEN_INPUTS),
+        ("Shadow.generated.swift", ("scripts/generate_shadow.py",) + TOKEN_INPUTS),
+        ("Blur.generated.swift", ("scripts/generate_blur.py",) + TOKEN_INPUTS),
+        # Any other *.generated.swift has no generator recorded here, so a
+        # change to it is a hand-edit until someone adds the pairing.
+        (".generated.swift", ()),
     ),
     "rn": (
         ("unistyles.ts", ("scripts/sync-tokens.js",)),
@@ -434,6 +443,10 @@ def main() -> int:
     for v in violations:
         counts[v.rule] = counts.get(v.rule, 0) + 1
 
+    # --json owns stdout. Every human-readable line goes to stderr so that
+    # `--json --budget ...` still emits parseable JSON and still reports.
+    out = sys.stderr if args.json else sys.stdout
+
     if args.json:
         print(json.dumps({"platform": args.platform,
                           "counts": counts,
@@ -452,8 +465,10 @@ def main() -> int:
             disabled = prev.get("disabled_rules", {})
         if disabled:
             counts = {r: c for r, c in counts.items() if r not in disabled}
-        raised = {r: (old[r], counts[r]) for r in counts
-                  if r in old and counts[r] > old[r]}
+        # A rule absent from the old budget is zero, not unbounded -- otherwise
+        # the first violation of a brand-new rule slips through on an --update.
+        raised = {r: (old.get(r, 0), counts[r]) for r in counts
+                  if counts[r] > old.get(r, 0)}
         if raised and not args.relock_reason:
             for r, (o, nnew) in sorted(raised.items()):
                 print(f"refusing to raise {r}: {o} -> {nnew}", file=sys.stderr)
@@ -478,16 +493,16 @@ def main() -> int:
             json.dump(doc, fh, indent=2)
             fh.write("\n")
         if raised:
-            print(f"budget RAISED for {len(raised)} rule(s), recorded in the file:")
+            print(f"budget RAISED for {len(raised)} rule(s), recorded in the file:", file=out)
             for r, (o, n) in sorted(raised.items()):
-                print(f"  {r}: {o} -> {n}")
-            print(f"  reason: {args.relock_reason}")
-        print(f"budget written: {args.budget} ({len(violations)} total)")
+                print(f"  {r}: {o} -> {n}", file=out)
+            print(f"  reason: {args.relock_reason}", file=out)
+        print(f"budget written: {args.budget} ({len(violations)} total)", file=out)
         return 0
 
     if not args.budget:
         if not args.json:
-            report(violations, counts, args.limit)
+            report(violations, counts, args.limit, out)
         return 1 if violations else 0
 
     if not os.path.exists(args.budget):
@@ -509,21 +524,21 @@ def main() -> int:
     over = {r: (budget.get(r, 0), c) for r, c in counts.items() if c > budget.get(r, 0)}
     if not over:
         for rule, why in sorted(disabled.items()):
-            print(f"note: {rule} is disabled here -- {why}")
+            print(f"note: {rule} is disabled here -- {why}", file=out)
         improved = {r: (b, counts.get(r, 0)) for r, b in budget.items()
                     if counts.get(r, 0) < b}
-        print(f"design check: {len(violations)} violations, all within budget.")
+        print(f"design check: {len(violations)} violations, all within budget.", file=out)
         if improved:
-            print("Improved since the budget was locked:")
+            print("Improved since the budget was locked:", file=out)
             for r, (b, c) in sorted(improved.items()):
-                print(f"  {r}: {b} -> {c}")
-            print("Re-lock with: --budget <path> --update")
+                print(f"  {r}: {b} -> {c}", file=out)
+            print("Re-lock with: --budget <path> --update", file=out)
         return 0
 
-    print("design check FAILED -- these rules went up:\n")
+    print("design check FAILED -- these rules went up:\n", file=out)
     for rule, (allowed, actual) in sorted(over.items()):
-        print(f"  {rule}: {allowed} allowed, {actual} found  (+{actual - allowed})")
-    print()
+        print(f"  {rule}: {allowed} allowed, {actual} found  (+{actual - allowed})", file=out)
+    print(file=out)
 
     shown = [v for v in violations if v.rule in over]
     # The budget records counts, not locations, so we cannot say exactly which
@@ -537,25 +552,27 @@ def main() -> int:
                   f"({len(in_diff)} of {len(shown)} for these rules):\n")
             shown = in_diff
 
-    report(shown, {r: sum(1 for v in shown if v.rule == r) for r in over}, args.limit)
-    print("Fix the new violations. Do not raise the budget to make CI pass.")
+    report(shown, {r: sum(1 for v in shown if v.rule == r) for r in over},
+           args.limit, out)
+    print("Fix the new violations. Do not raise the budget to make CI pass.", file=out)
     return 1
 
 
-def report(violations: list[Violation], counts: dict[str, int], limit: int) -> None:
+def report(violations: list[Violation], counts: dict[str, int], limit: int,
+           out=sys.stdout) -> None:
     if not violations:
-        print("design check: clean.")
+        print("design check: clean.", file=out)
         return
     for rule in sorted(counts):
         rows = [v for v in violations if v.rule == rule]
-        print(f"{rule}  ({len(rows)})")
-        print(f"  {rows[0].hint}")
+        print(f"{rule}  ({len(rows)})", file=out)
+        print(f"  {rows[0].hint}", file=out)
         for v in rows[:limit]:
             where = f"{v.file}:{v.line}" if v.line else v.file
-            print(f"    {where}\n      {v.text}")
+            print(f"    {where}\n      {v.text}", file=out)
         if len(rows) > limit:
-            print(f"    ... and {len(rows) - limit} more")
-        print()
+            print(f"    ... and {len(rows) - limit} more", file=out)
+        print(file=out)
 
 
 if __name__ == "__main__":

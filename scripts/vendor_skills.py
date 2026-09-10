@@ -132,14 +132,25 @@ def vendor(target: str, dry_run: bool = False) -> int:
             print(f"  {os.path.relpath(dst, target)}")
         return 0
 
-    # Remove vendored skills that are no longer in the manifest, so a renamed
-    # or dropped skill does not linger.
-    if os.path.isdir(skills_dst):
-        for existing in sorted(os.listdir(skills_dst)):
-            path = os.path.join(skills_dst, existing)
-            if os.path.isdir(path) and existing not in MANIFEST[name]:
+    # Remove skills we previously vendored that are no longer in the manifest,
+    # so a renamed or dropped skill does not linger.
+    #
+    # Scoped to what the last manifest actually recorded: an app-specific or
+    # third-party skill under .claude/skills is not ours to delete.
+    previous = os.path.join(skills_dst, ".vendored.json")
+    if os.path.exists(previous):
+        try:
+            with open(previous) as fh:
+                owned_before = json.load(fh).get("files", {})
+        except (OSError, json.JSONDecodeError):
+            owned_before = {}
+        owned_dirs = {rel.split("/")[2] for rel in owned_before
+                      if rel.startswith(".claude/skills/") and rel.count("/") > 2}
+        for stale in sorted(owned_dirs - set(MANIFEST[name])):
+            path = os.path.join(skills_dst, stale)
+            if os.path.isdir(path):
                 shutil.rmtree(path)
-                print(f"  removed stale skill: {existing}")
+                print(f"  removed skill we previously vendored: {stale}")
 
     for src, dst in planned:
         os.makedirs(os.path.dirname(dst), exist_ok=True)
