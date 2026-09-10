@@ -54,7 +54,12 @@ SWIFT_OK_SPACING = {0}
 SWIFT_OK_RADIUS = {0, 9999}      # Radius.infinity
 
 # An annotated hardcode is tracked debt, not a violation. Look this far back.
-GAP_MARKER = re.compile(r"GAP \(tokens\)|Figma", re.I)
+#
+# Only "GAP (tokens)" waives a rule. A bare Figma reference does NOT: there are
+# ~500 of them in the mobile code and they record which node a value came from,
+# which is provenance, not permission. Treating them as a waiver would silently
+# exempt most of the codebase from the ratchet.
+GAP_MARKER = re.compile(r"GAP \(tokens\)", re.I)
 GAP_LOOKBACK = 6
 
 # --------------------------------------------------------------------------
@@ -436,10 +441,14 @@ def main() -> int:
         if not args.budget:
             print("--update needs --budget", file=sys.stderr)
             return 2
-        old = {}
+        old, disabled = {}, {}
         if os.path.exists(args.budget):
             with open(args.budget) as fh:
-                old = json.load(fh).get("counts", {})
+                prev = json.load(fh)
+            old = prev.get("counts", {})
+            disabled = prev.get("disabled_rules", {})
+        if disabled:
+            counts = {r: c for r, c in counts.items() if r not in disabled}
         raised = {r: (old[r], counts[r]) for r in counts
                   if r in old and counts[r] > old[r]}
         if raised:
@@ -449,10 +458,13 @@ def main() -> int:
                   "instead of re-locking.", file=sys.stderr)
             return 1
         with open(args.budget, "w") as fh:
-            json.dump({"_comment": "Ratchet for check_design.py. Counts may fall, "
-                                   "never rise. Re-lock with --update after a cleanup.",
-                       "platform": args.platform,
-                       "counts": dict(sorted(counts.items()))}, fh, indent=2)
+            doc = {"_comment": "Ratchet for check_design.py. Counts may fall, "
+                               "never rise. Re-lock with --update after a cleanup.",
+                   "platform": args.platform,
+                   "counts": dict(sorted(counts.items()))}
+            if disabled:
+                doc["disabled_rules"] = disabled
+            json.dump(doc, fh, indent=2)
             fh.write("\n")
         print(f"budget written: {args.budget} ({len(violations)} total)")
         return 0
@@ -466,10 +478,22 @@ def main() -> int:
         print(f"no budget at {args.budget} -- create one with --update", file=sys.stderr)
         return 2
     with open(args.budget) as fh:
-        budget = json.load(fh).get("counts", {})
+        budget_doc = json.load(fh)
+    budget = budget_doc.get("counts", {})
+
+    # Some rules cannot be satisfied in some repos -- orion-sales-studio-ios has
+    # no typography API at all, so swift/system-font has no correct alternative
+    # to point at and freezing it would block every new screen. Disable such a
+    # rule explicitly, with a reason, rather than pretending the budget holds.
+    disabled = budget_doc.get("disabled_rules", {})
+    if disabled:
+        counts = {r: c for r, c in counts.items() if r not in disabled}
+        violations = [v for v in violations if v.rule not in disabled]
 
     over = {r: (budget.get(r, 0), c) for r, c in counts.items() if c > budget.get(r, 0)}
     if not over:
+        for rule, why in sorted(disabled.items()):
+            print(f"note: {rule} is disabled here -- {why}")
         improved = {r: (b, counts.get(r, 0)) for r, b in budget.items()
                     if counts.get(r, 0) < b}
         print(f"design check: {len(violations)} violations, all within budget.")

@@ -84,7 +84,7 @@ Not every number is a violation. These are house conventions, not drift:
 - Sheet top corners `32`.
 - Control heights `56` / `48` / `44` / `40` — button and input sizes.
 - Values genuinely off the scale (`14`, `18`, `40`, …) — check Figma first, and
-  if the design really wants it, leave a comment saying so.
+  if the design really wants it, waive it with a `GAP (tokens):` comment.
 
 ## 4. The four styling idioms
 

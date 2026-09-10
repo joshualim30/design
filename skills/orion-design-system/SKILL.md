@@ -51,8 +51,18 @@ scale, because both are generated from the same payload:
 | **radius** | small | medium | large | x-large | xx-large |
 
 A value that is *not* on the scale is a signal, not a licence: check Figma
-again, and if the design really does want an off-scale value, say so in a
-comment rather than leaving a bare number.
+again. If the design really does want an off-scale value, waive it explicitly:
+
+```swift
+/// GAP (tokens): the hero image bleeds 18pt past the card to line up with the
+/// chart beneath it. Figma 13858:109112. Not on the spacing scale.
+.padding(.horizontal, 18)
+```
+
+**`GAP (tokens)` is the only marker the linter accepts as a waiver.** A bare
+Figma node reference does not waive anything — there are ~500 of them in the
+mobile code and they record where a value came from, which is provenance, not
+permission.
 
 **3. Never type a raw colour.** Colours are semantic and component-scoped —
 `buttons.primary.background.main`, not `blue500`. There is a token for nearly

@@ -59,7 +59,7 @@ NFC patches and BLE onboarding. Then which of the apps this repo is:
 | `orion-ios` | The flagship consumer iOS app. Fork parent for the others. |
 | `orion-react-native` | The Android app. Expo/RN. iOS ships from the Swift repos. |
 | `orion-sleep-test-ios` | The sleep-test product. Fork of orion-ios, heavy Figma-fidelity work. |
-| `orion-sales-studio-ios` | Internal sales tool. Fork, but a thinner one — no typography system, no strings, no CI. |
+| `orion-sales-studio-ios` | Internal sales tool. Fork, but a thinner one — no typography system, no strings, no localization. |
 | `orion-control-plane` | The Cloudflare Workers backend these all talk to. |
 
 **Layout.** The directory tree you just listed, with what goes where.
