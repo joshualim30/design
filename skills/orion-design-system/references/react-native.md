@@ -20,10 +20,10 @@ Assumes the shared rules in [../SKILL.md](../SKILL.md) are loaded.
 
 ## 1. Where tokens live
 
-`unistyles.ts` at the repo root — ~2,470 generated lines, **no do-not-edit
-banner inside the file**. `npm run sync:tokens` overwrites it whole, including
-the `StyleSheet.configure` call, the breakpoints, and the module augmentation.
-Nothing you add there survives.
+`unistyles.ts` at the repo root — ~2,480 generated lines, with a do-not-edit
+banner the generator writes. `npm run sync:tokens` overwrites it whole,
+including the `StyleSheet.configure` call, the breakpoints, and the module
+augmentation. Nothing you add there survives.
 
 Five top-level keys: `blur`, `color`, `shadow`, `spacing`, `radius`.
 **No typography** — type lives in the components (§6).

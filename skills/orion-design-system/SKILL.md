@@ -29,8 +29,11 @@ tells you what the thing you are porting was built out of.
 
 **1. Never hand-edit a generated file.** The generator overwrites it and CI
 fails the PR. On iOS that is anything named `*.generated.swift`. On RN it is
-`unistyles.ts` — all 2,400+ lines of it, which carries no banner of its own, so
-the absence of a warning in the file is not permission.
+`unistyles.ts` — all 2,400+ lines of it.
+
+Both carry a do-not-edit banner at the top, emitted by the generator itself —
+if you are reading one and the banner is missing, the file predates that
+change, not the rule.
 
 To change a token, change it in this repo (`semantic-tokens`) and let the sync
 bring it down. To change how a token is *rendered* into code, change the

@@ -94,15 +94,27 @@ PROTECTED = {
     "rn": ("unistyles.ts",),
 }
 
-# ...unless the thing that generates them changed in the same diff. A generated
-# file moving alongside its generator or its input payload is a regeneration,
-# which is the sanctioned way to change one. Only a generated file moving on its
-# own is a hand-edit.
+# ...unless the thing that generates that file changed in the same diff. A
+# generated file moving alongside its own generator or input payload is a
+# regeneration, which is the sanctioned way to change one; moving on its own is
+# a hand-edit.
+#
+# Paired per protected file rather than diff-wide: changing generate_colors.py
+# should not license an unrelated hand-edit to Strings.generated.swift.
 GENERATORS = {
-    "swift": ("scripts/generate_", "scripts/make_all.py", "scripts/make_strings.py",
-              "scripts/design-tokens.json", "scripts/token_fetch.py",
-              "scripts/update_tokens.py", "Localizable.xcstrings"),
-    "rn": ("scripts/sync-tokens.js",),
+    "swift": (
+        ("Strings.generated.swift", ("scripts/make_strings.py",
+                                     "scripts/generate_strings.py",
+                                     "scripts/format_strings.py",
+                                     "Localizable.xcstrings")),
+        (".generated.swift", ("scripts/generate_", "scripts/make_all.py",
+                              "scripts/design-tokens.json",
+                              "scripts/token_fetch.py",
+                              "scripts/update_tokens.py")),
+    ),
+    "rn": (
+        ("unistyles.ts", ("scripts/sync-tokens.js",)),
+    ),
 }
 
 
@@ -185,7 +197,7 @@ def check_swift(path: str, lines: list[str]) -> list[Violation]:
                 "Pass dynamicTypeSize:."))
 
         m = RE_ROUNDED_RECT.search(line)
-        if m:
+        if m and not annotated(i):
             v = float(m.group(1))
             if v.is_integer() and int(v) not in SWIFT_OK_RADIUS:
                 iv = int(v)
@@ -200,7 +212,7 @@ def check_swift(path: str, lines: list[str]) -> list[Violation]:
                          (RE_SPACING_INT, "spacing")):
             for m in rx.finditer(line):
                 v = int(m.group(1))
-                if v in SWIFT_OK_SPACING:
+                if v in SWIFT_OK_SPACING or annotated(i):
                     continue
                 tok = SWIFT_SPACING.get(v)
                 out.append(Violation(
@@ -291,7 +303,7 @@ def check_rn(path: str, lines: list[str]) -> list[Violation]:
 
         for m in RE_RN_SPACE.finditer(line):
             prop, v = m.group(1), int(m.group(2))
-            if v in RN_OK_SPACING:
+            if v in RN_OK_SPACING or annotated(i):
                 continue
             tok = SPACING.get(v)
             out.append(Violation(
@@ -302,7 +314,7 @@ def check_rn(path: str, lines: list[str]) -> list[Violation]:
 
         for m in RE_RN_RADIUS.finditer(line):
             prop, v = m.group(1), int(m.group(2))
-            if v in RN_OK_RADIUS:
+            if v in RN_OK_RADIUS or annotated(i):
                 continue
             tok = RADIUS.get(v)
             out.append(Violation(
@@ -362,26 +374,33 @@ def collect(platform: str) -> list[Violation]:
 def changed_files(base: str) -> list[str]:
     """Files touched vs `base`. Empty list if git can't tell us."""
     try:
+        # splitlines(), not split(): the Swift repos have spaces in their
+        # paths ("Orion Sleep Test/...", "Sales Studio/...") and whitespace
+        # splitting silently fragments every one of them.
         return subprocess.run(
             ["git", "diff", "--name-only", f"{base}...HEAD"],
-            capture_output=True, text=True, check=True).stdout.split()
+            capture_output=True, text=True, check=True).stdout.splitlines()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return []
 
 
 def protected_touched(platform: str, base: str) -> list[Violation]:
     changed = changed_files(base)
-    regenerated = any(any(g in f for g in GENERATORS[platform]) for f in changed)
-    if regenerated:
-        return []
     out = []
     for f in changed:
-        if any(f.endswith(s) or s in f for s in PROTECTED[platform]):
+        # First matching rule wins, so the more specific entry
+        # (Strings.generated.swift) must precede the general one.
+        for marker, generators in GENERATORS[platform]:
+            if not (f.endswith(marker) or marker in f):
+                continue
+            if any(any(g in c for g in generators) for c in changed):
+                break        # regenerated -- expected
             out.append(Violation(
                 f"{platform}/generated-file-edited", f, 0, f,
-                "This file is generated and changed on its own -- no generator "
-                "or token payload moved with it. Change the source in "
-                "Orion-Sleep/design and regenerate."))
+                "This file is generated and changed on its own -- neither its "
+                "generator nor its input payload moved with it. Change the "
+                "source in Orion-Sleep/design and regenerate."))
+            break
     return out
 
 
