@@ -112,7 +112,8 @@ TOKEN_INPUTS = ("scripts/make_all.py", "scripts/design-tokens.json",
 # not license a hand-edit to Spacing.generated.swift.
 GENERATORS = {
     "swift": (
-        ("Icon.generated.swift", ("scripts/generate_icons.py", "Assets.xcassets")),
+        ("Icon.generated.swift", ("scripts/generate_icons.py",
+                                  "Assets.xcassets/Icons")),
         ("Strings.generated.swift", ("scripts/make_strings.py",
                                      "scripts/generate_strings.py",
                                      "scripts/format_strings.py",
@@ -549,7 +550,8 @@ def main() -> int:
         in_diff = [v for v in shown if v.file in touched]
         if in_diff:
             print(f"In files changed vs {args.diff_base} "
-                  f"({len(in_diff)} of {len(shown)} for these rules):\n")
+                  f"({len(in_diff)} of {len(shown)} for these rules):\n",
+                  file=out)
             shown = in_diff
 
     report(shown, {r: sum(1 for v in shown if v.rule == r) for r in over},
