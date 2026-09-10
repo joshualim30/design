@@ -418,6 +418,9 @@ def main() -> int:
     ap.add_argument("--budget", help="path to design-budget.json")
     ap.add_argument("--update", action="store_true",
                     help="rewrite the budget from the current counts (only ever downward)")
+    ap.add_argument("--relock-reason", metavar="WHY",
+                    help="allow --update to raise a count, recording WHY in the budget. "
+                         "For when a rule got stricter, not for making CI pass.")
     ap.add_argument("--diff-base", help="also flag generated files modified vs this ref")
     ap.add_argument("--json", action="store_true", help="emit the full report as JSON")
     ap.add_argument("--limit", type=int, default=25, help="examples printed per rule")
@@ -451,11 +454,14 @@ def main() -> int:
             counts = {r: c for r, c in counts.items() if r not in disabled}
         raised = {r: (old[r], counts[r]) for r in counts
                   if r in old and counts[r] > old[r]}
-        if raised:
+        if raised and not args.relock_reason:
             for r, (o, nnew) in sorted(raised.items()):
                 print(f"refusing to raise {r}: {o} -> {nnew}", file=sys.stderr)
             print("\nThe budget only ratchets down. Fix the new violations "
-                  "instead of re-locking.", file=sys.stderr)
+                  "instead of re-locking.\n"
+                  "\nIf a rule genuinely got stricter and the rise is that "
+                  "change rather than new drift, say so:\n"
+                  "  --update --relock-reason \"...\"", file=sys.stderr)
             return 1
         with open(args.budget, "w") as fh:
             doc = {"_comment": "Ratchet for check_design.py. Counts may fall, "
@@ -464,8 +470,18 @@ def main() -> int:
                    "counts": dict(sorted(counts.items()))}
             if disabled:
                 doc["disabled_rules"] = disabled
+            if raised:
+                doc["_relocked_upward"] = {
+                    "reason": args.relock_reason,
+                    "rules": {r: f"{o} -> {n}" for r, (o, n) in sorted(raised.items())},
+                }
             json.dump(doc, fh, indent=2)
             fh.write("\n")
+        if raised:
+            print(f"budget RAISED for {len(raised)} rule(s), recorded in the file:")
+            for r, (o, n) in sorted(raised.items()):
+                print(f"  {r}: {o} -> {n}")
+            print(f"  reason: {args.relock_reason}")
         print(f"budget written: {args.budget} ({len(violations)} total)")
         return 0
 
